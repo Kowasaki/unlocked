@@ -26,6 +26,15 @@ def test_order():
     assert priority_queue.len() == 4
 
     priority_queue = unlocked.PriorityQueue()
+    priority_queue.insert(5)
+    priority_queue.insert(1)
+    priority_queue.insert(999)
+    priority_queue.insert(1000)
+    priority_queue.insert(3)
+    priority_queue.insert(20)
+    assert priority_queue.arr == [1000, 999,20,5,3,1]
+
+    priority_queue = unlocked.PriorityQueue()
     priority_queue.insert(3)
     priority_queue.insert(3)
     priority_queue.insert(3)

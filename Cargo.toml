@@ -10,8 +10,13 @@ edition = "2021"
 name = "unlocked"
 crate-type = ["cdylib"]
 
-[dependencies.pyo3]
-version = "0.15.1"
+[dependencies]
+pyo3 = { version = "0.15.1"}
+rayon = { version = "1.5"}
+aws-config = { version = "0.3.0"}
+aws-sdk-dynamodb = { version = "0.3.0"}
+aws-sdk-s3 = "0.3.0"
+tokio = { version = "1", features = ["full"] }
 
 [features]
 extension-module = ["pyo3/extension-module"]

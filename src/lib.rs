@@ -1,7 +1,14 @@
+use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_s3::presigning::config::PresigningConfig;
+use aws_sdk_s3::{Client, Region, PKG_VERSION};
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use rayon::prelude::*;
+
+use std::error::Error;
+use std::time::Duration;
 
 /// This is a rust implementation of a priority queue data structure.
 #[pyclass]
@@ -25,6 +32,12 @@ impl PriorityQueue {
         if self.arr.len() == 0{
             self.arr.push(val);
             Ok(())
+        } else if val >= self.arr[0]{
+            self.arr.insert(0, val);
+            Ok(())
+        } else if val <= self.arr[self.arr.len()-1]{
+            self.arr.push(val);
+            Ok(())
         } else {
             let ptr = self.arr.len() / 2;
             self.heapify(ptr, val);
@@ -34,17 +47,7 @@ impl PriorityQueue {
 
     fn heapify(&mut self, ptr: usize, val: i32){
         
-        if ptr == 0 {
-            if self.arr[ptr] <= val {
-                self.arr.insert(ptr, val);
-            } 
-        } else if ptr == self.arr.len() - 1 {
-            if self.arr[ptr] >= val {
-                self.arr.push(val);
-            }  else if  self.arr[ptr-1] >= val {
-                self.arr.insert(ptr, val);
-            }
-        } else if self.arr[ptr] <= val {
+        if self.arr[ptr] <= val {
             if self.arr[ptr-1] >= val {
                 self.arr.insert(ptr, val);
             } else {
@@ -81,6 +84,70 @@ impl PriorityQueue {
 
 }
 
+
+// Copied from (https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/rust_dev_preview/s3/src/bin/get-object-presigned.rs)
+// Get object using presigned request.
+// snippet-start:[s3.rust.get-object-presigned]
+async fn get_object(
+    client: &Client,
+    bucket: &str,
+    object: &str,
+    expires_in: u64,
+) -> Result<(), Box<dyn Error>> {
+    let expires_in = Duration::from_secs(expires_in);
+    let presigned_request = client
+        .get_object()
+        .bucket(bucket)
+        .key(object)
+        .presigned(PresigningConfig::expires_in(expires_in)?)
+        .await?;
+
+    println!("Object URI: {}", presigned_request.uri());
+
+    Ok(())
+}
+
+// (copied from https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/rust_dev_preview/s3/src/bin/put-object-presigned.rs)
+// Adds an object to a bucket and returns a public URI.
+// snippet-start:[s3.rust.put-object-presigned]
+async fn put_object(
+    client: &Client,
+    bucket: &str,
+    object: &str,
+    expires_in: u64,
+) -> Result<(), Box<dyn Error>> {
+    let expires_in = Duration::from_secs(expires_in);
+
+    let presigned_request = client
+        .put_object()
+        .bucket(bucket)
+        .key(object)
+        .presigned(PresigningConfig::expires_in(expires_in)?)
+        .await?;
+
+    println!("Object URI: {}", presigned_request.uri());
+
+    Ok(())
+}
+
+#[pyfunction]
+fn batch_download(uris: Vec<String>, bucket:string, ) -> PyResult<Vec<bool>> {
+
+    let region_provider = RegionProviderChain::first_try(region.map(Region::new))
+    .or_default_provider()
+    .or_else(Region::new("us-east-1"));
+
+    let shared_config = aws_config::from_env().region(region_provider).load().await;
+    let client = Client::new(&shared_config);
+
+    uris.iter()
+        .map(|uri| get_object(&client, &bucket, &uri, expires_in.unwrap_or(900)).await)
+        .collect::<Vec<_>>()
+
+    Ok(())
+}
+
+
 /// A Python module implemented in Rust. The name of this function must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 /// import the module.
@@ -89,52 +156,3 @@ fn unlocked(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PriorityQueue>()?;
     Ok(())
 }
-
-// Can't get the tests to work in rust...
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     #[test]
-//     fn test_get_max() {
-//         let mut priority_q = PriorityQueue::new();
-//         priority_q.insert(13);
-//         priority_q.insert(25);
-//         assert_eq!(priority_q.get_max().unwrap(), 25);
-//         assert_eq!(priority_q.len().unwrap(), 1);
-//     }
-//     #[test] 
-//     fn test_get_min() {
-//         let mut priority_q = PriorityQueue::new();
-//         priority_q.insert(13);
-//         priority_q.insert(25);
-//         assert_eq!(priority_q.get_min().unwrap(), 13);
-//         assert_eq!(priority_q.len().unwrap(), 1);
-//     }
-//     #[test] 
-//     fn test_order() {
-//         let mut priority_q = PriorityQueue::new();
-//         priority_q.insert(3);
-//         priority_q.insert(5);
-//         priority_q.insert(4);
-//         priority_q.insert(2);
-//         priority_q.insert(1);
-//         assert_eq!(priority_q.arr, vec![5,4,3,2,1]);
-
-//         let mut priority_q2 = PriorityQueue::new();
-//         priority_q2.insert(3);
-//         priority_q2.insert(3);
-//         priority_q2.insert(3);
-//         priority_q2.insert(3);
-//         priority_q2.insert(3);
-//         assert_eq!(priority_q2.arr, vec![3,3,3,3,3]);
-//     }
-//     #[test] 
-//     #[should_panic]
-//     fn test_no_element(){
-//         let mut priority_q = PriorityQueue::new();
-//         // assert_eq!(priority_q.get_max());
-//         priority_q.get_max();
-
-//     }
-
-// }
