@@ -17,13 +17,11 @@ def download_from_s3(bucket_name, s3_path, local_path):
 
 @ray.remote
 def ray_upload_to_s3(bucket_name, local_path, s3_path):
-    s3 = boto3.client('s3')
-    s3.upload_file(local_path, bucket_name, s3_path)
+    upload_to_s3(bucket_name, local_path, s3_path)
 
 @ray.remote
 def ray_download_from_s3(bucket_name, s3_path, local_path):
-    s3 = boto3.client('s3')
-    s3.download_file(bucket_name, s3_path, local_path)
+    download_from_s3(bucket_name, s3_path, local_path)
 
 def p_upload_to_s3(bucket_name, local_dir, obj_name):
     s3 = boto3.client('s3')
@@ -70,6 +68,6 @@ def process_upload():
         print(res)
 
 if __name__ == "__main__":
-    # ray_upload()
-    # thread_upload()
+    ray_upload()
+    thread_upload()
     process_upload()

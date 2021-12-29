@@ -1,14 +1,15 @@
 use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_s3::presigning::config::PresigningConfig;
-use aws_sdk_s3::{Client, Region, PKG_VERSION};
+use aws_sdk_s3::{ByteStream, Client, Error, Region};
+
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use rayon::prelude::*;
-
-use std::error::Error;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::path::Path;
+use std::process;
 
 /// This is a rust implementation of a priority queue data structure.
 #[pyclass]
@@ -85,53 +86,42 @@ impl PriorityQueue {
 }
 
 
-// Copied from (https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/rust_dev_preview/s3/src/bin/get-object-presigned.rs)
-// Get object using presigned request.
-// snippet-start:[s3.rust.get-object-presigned]
-async fn get_object(
+// (copied from https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/rust_dev_preview/s3/src/bin/s3-helloworld.rs)
+// Upload a file to a bucket.
+// snippet-start:[s3.rust.s3-helloworld]
+async fn upload_object(
     client: &Client,
     bucket: &str,
-    object: &str,
-    expires_in: u64,
-) -> Result<(), Box<dyn Error>> {
-    let expires_in = Duration::from_secs(expires_in);
-    let presigned_request = client
-        .get_object()
-        .bucket(bucket)
-        .key(object)
-        .presigned(PresigningConfig::expires_in(expires_in)?)
-        .await?;
+    filename: &str,
+    key: &str,
+) -> Result<(), Error> {
 
-    println!("Object URI: {}", presigned_request.uri());
+    let body = ByteStream::from_path(Path::new(filename)).await;
+
+    match body {
+        Ok(b) => {
+            let _resp = client
+                 .put_object()
+                 .bucket(bucket)
+                 .key(key)
+                 .body(b)
+                 .send()
+                 .await?;
+
+            println!("{} uploaded successfully", filename);
+
+        }
+        Err(e) => {
+            println!("Got an error uploading object:");
+            println!("{}", e);
+            process::exit(1);
+        }
+    }
 
     Ok(())
 }
 
-// (copied from https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/rust_dev_preview/s3/src/bin/put-object-presigned.rs)
-// Adds an object to a bucket and returns a public URI.
-// snippet-start:[s3.rust.put-object-presigned]
-async fn put_object(
-    client: &Client,
-    bucket: &str,
-    object: &str,
-    expires_in: u64,
-) -> Result<(), Box<dyn Error>> {
-    let expires_in = Duration::from_secs(expires_in);
-
-    let presigned_request = client
-        .put_object()
-        .bucket(bucket)
-        .key(object)
-        .presigned(PresigningConfig::expires_in(expires_in)?)
-        .await?;
-
-    println!("Object URI: {}", presigned_request.uri());
-
-    Ok(())
-}
-
-#[pyfunction]
-fn batch_download(uris: Vec<String>, bucket:string, ) -> PyResult<Vec<bool>> {
+pub async fn batch_upload(file_key_map: &HashMap<String, String>, bucket: &str, region: Option<String>) -> Result<(), Error> {
 
     let region_provider = RegionProviderChain::first_try(region.map(Region::new))
     .or_default_provider()
@@ -140,10 +130,14 @@ fn batch_download(uris: Vec<String>, bucket:string, ) -> PyResult<Vec<bool>> {
     let shared_config = aws_config::from_env().region(region_provider).load().await;
     let client = Client::new(&shared_config);
 
-    uris.iter()
-        .map(|uri| get_object(&client, &bucket, &uri, expires_in.unwrap_or(900)).await)
-        .collect::<Vec<_>>()
+    let t_start = std::time::Instant::now();
+    let futures = FuturesUnordered::new();
+    for (filename, key) in file_key_map {
+        futures.push(upload_object(&client, &bucket, &filename, &key));
+    }
 
+    let _res: Vec<_> = futures.collect().await;   
+    println!("Uploaded {} files in {} seconds", file_key_map.len(), t_start.elapsed().as_secs());
     Ok(())
 }
 
